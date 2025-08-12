@@ -1,7 +1,8 @@
-module github.com/shbrx98/Decamond_Tsak.git
+module github.com/shbrx98/Decamond_Tsak
 
 go 1.21
 
+replace github.com/shbrx98/Decamond_Tsak => .
 require (
     github.com/gin-gonic/gin v1.9.1
     github.com/golang-jwt/jwt/v5 v5.2.0
