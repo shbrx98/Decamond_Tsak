@@ -59,7 +59,8 @@ go run cmd/api/main.go
 ## 📖 API Documentation
 
 Once the service is running, access the interactive API documentation at:
-```
+
+```text
 http://localhost:8080/swagger/index.html
 ```
 

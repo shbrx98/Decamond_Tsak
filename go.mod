@@ -1,4 +1,4 @@
-module github.com/shbrx[5~98/Decamond_otp-auth-service
+module github.com/shbrx98/Decamond_Tsak.git
 
 go 1.21
 
