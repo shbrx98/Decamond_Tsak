@@ -13,31 +13,28 @@ type JWTConfig struct {
     Secret   string
     Issuer   string
     Audience string
+
+    AcceptWithoutBearer bool   
+    AcceptFromCookie     bool   
+    CookieName           string 
+    AcceptFromQuery      bool   
+    QueryParam           string 
 }
 
 func AuthMiddleware(cfg JWTConfig) gin.HandlerFunc {
     return func(c *gin.Context) {
-        authHeader := c.GetHeader("Authorization")
-        if authHeader == "" {
-            c.JSON(http.StatusUnauthorized, gin.H{"error": "MISSING_TOKEN", "message": "Authorization header is required"})
+        tokenString := extractToken(c, cfg)
+        if tokenString == "" {
+            c.JSON(http.StatusUnauthorized, gin.H{
+                "error":   "MISSING_TOKEN",
+                "message": "Authorization header is required (Use: Bearer <token>)",
+            })
             c.Abort()
             return
         }
-        parts := strings.SplitN(authHeader, " ", 2)
-        if len(parts) != 2 || parts[0] != "Bearer" {
-            c.JSON(http.StatusUnauthorized, gin.H{"error": "INVALID_TOKEN_FORMAT", "message": "Use: Bearer <token>"})
-            c.Abort()
-            return
-        }
-        tokenString = parts[1]
 
-        type Claims struct {
-            Phone string `json:"phone"`
-            jwt.RegisteredClaims
-        }
-
-        token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-            if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+        token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
+            if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
                 return nil, jwt.ErrSignatureInvalid
             }
             return []byte(cfg.Secret), nil
@@ -47,17 +44,53 @@ func AuthMiddleware(cfg JWTConfig) gin.HandlerFunc {
             jwt.WithAudience(cfg.Audience),
             jwt.WithLeeway(1*time.Minute),
         )
+
         if err != nil || !token.Valid {
-            c.JSON(http.StatusUnauthorized, gin.H{"error": "INVALID_TOKEN", "message": "Invalid or expired token"})
+            c.JSON(http.StatusUnauthorized, gin.H{
+                "error":   "INVALID_TOKEN",
+                "message": "Invalid or expired token",
+            })
             c.Abort()
             return
         }
 
-        if claims, ok := token.Claims.(*Claims); ok {
-            c.Set("user_id", claims.Subject)
-            c.Set("phone", claims.Phone)
+        if claims, ok := token.Claims.(jwt.MapClaims); ok {
+            c.Set("user_id", claims["sub"])
+            c.Set("phone", claims["phone"])
         }
-
         c.Next()
     }
+}
+
+func extractToken(c *gin.Context, cfg JWTConfig) string {
+    // 1) Authorization header
+    hdr := strings.TrimSpace(c.GetHeader("Authorization"))
+    if hdr != "" {
+        parts := strings.Fields(hdr)
+        if len(parts) >= 2 && strings.EqualFold(parts[0], "Bearer") {
+            return strings.TrimSpace(parts[1])
+        }
+        if cfg.AcceptWithoutBearer {
+         
+            return hdr
+        }
+     
+        return ""
+    }
+
+    // 2) Cookie
+    if cfg.AcceptFromCookie && cfg.CookieName != "" {
+        if tok, err := c.Cookie(cfg.CookieName); err == nil && strings.TrimSpace(tok) != "" {
+            return strings.TrimSpace(tok)
+        }
+    }
+
+
+    if cfg.AcceptFromQuery && cfg.QueryParam != "" {
+        if tok := strings.TrimSpace(c.Query(cfg.QueryParam)); tok != "" {
+            return tok
+        }
+    }
+
+    return ""
 }

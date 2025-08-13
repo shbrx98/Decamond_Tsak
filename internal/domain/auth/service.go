@@ -2,7 +2,11 @@ package auth
 
 import (
     "context"
+    "crypto/hmac"
+    "crypto/sha256"
     "crypto/subtle"
+    "encoding/hex"
+    "regexp"
     "time"
 
     domUser "github.com/shbrx98/Decamond_Tsak/internal/domain/user"
@@ -18,31 +22,32 @@ type otpStore interface {
 }
 
 type Service struct {
-    store     otpStore
-    userRepo  domUser.Repository
-    jwtSecret string
-
-    // policy
+    store          otpStore
+    userRepo       domUser.Repository
+    jwtSecret      string
+    otpPepper      []byte
     verifyAttempts int
     verifyWindow   time.Duration
 }
 
-func NewService(store otpStore, userRepo domUser.Repository, jwtSecret string) *Service {
+func NewService(store otpStore, userRepo domUser.Repository, jwtSecret string, otpPepper string) *Service {
     return &Service{
-        store:         store,
-        userRepo:      userRepo,
-        jwtSecret:     jwtSecret,
+        store:          store,
+        userRepo:       userRepo,
+        jwtSecret:      jwtSecret,
+        otpPepper:      []byte(otpPepper),
         verifyAttempts: 5,
         verifyWindow:   10 * time.Minute,
     }
 }
 
 func (s *Service) StoreOTP(ctx context.Context, otp *OTP) error {
+    
     return s.store.Save(ctx, otp.Phone, otp.Code, time.Until(otp.ExpiresAt))
 }
 
 func (s *Service) VerifyOTP(ctx context.Context, phone, code string) error {
-    // brute-force guard
+    
     attempts, err := s.store.IncAttempts(ctx, phone, s.verifyWindow)
     if err != nil {
         return appErr.NewInternalError("attempts counter error")
@@ -51,32 +56,40 @@ func (s *Service) VerifyOTP(ctx context.Context, phone, code string) error {
         return appErr.NewRateLimitError("too many verification attempts")
     }
 
-    expectedHash, err := s.store.GetHash(ctx, phone)
-    if err != nil {
+    expected, err := s.store.GetHash(ctx, phone)
+    if err != nil || expected == "" {
         return appErr.NewUnauthorizedError("invalid or expired OTP")
     }
 
-    // recompute hash and constant-time compare
-    computed := s.hash(phone, code)
-    if subtle.ConstantTimeCompare([]byte(expectedHash), []byte(computed)) != 1 {
-        return appErr.NewUnauthorizedError("invalid or expired OTP")
+    
+    if looksSHA256Hex(expected) && len(s.otpPepper) > 0 {
+        computed := s.hash(phone, code)
+        if subtle.ConstantTimeCompare([]byte(expected), []byte(computed)) != 1 {
+            return appErr.NewUnauthorizedError("invalid or expired OTP")
+        }
+    } else {
+         
+        if subtle.ConstantTimeCompare([]byte(expected), []byte(code)) != 1 {
+            return appErr.NewUnauthorizedError("invalid or expired OTP")
+        }
     }
 
-    // success: invalidate OTP and reset attempts
     _ = s.store.Delete(ctx, phone)
     _ = s.store.ResetAttempts(ctx, phone)
     return nil
 }
 
-// JWT helpers
 func (s *Service) GenerateJWT(u *domUser.User, expiry time.Duration, issuer, audience string) (string, int64, error) {
     return GenerateJWT(s.jwtSecret, u, expiry, issuer, audience)
 }
 
-// keep same hashing as store
 func (s *Service) hash(phone, code string) string {
-    // keep synchronized with redis store
-    // For simplicity, duplicate logic — or refactor to a shared helper.
-    // This duplication is acceptable here to avoid infra dependency in domain.
-    return "" // not used; store performs hash, we rely on store.GetHash + our own re-hash in OTPStore; Removed in this version.
+    mac := hmac.New(sha256.New, s.otpPepper)
+    mac.Write([]byte(phone))
+    mac.Write([]byte("|"))
+    mac.Write([]byte(code))
+    return hex.EncodeToString(mac.Sum(nil))
 }
+
+var shaHexRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
+func looksSHA256Hex(s string) bool { return shaHexRe.MatchString(s) }
