@@ -60,14 +60,14 @@ func Load() (*Config, error) {
 
     cfg := &Config{
         Server: ServerConfig{
-            Port: getInt("SERVER_PORT", 8080),
+            Port: getInt("SERVER_PORT", 8082),
             Env:  get("SERVER_ENV", "development"),
         },
         Database: DatabaseConfig{
             Host:            get("DB_HOST", "localhost"),
             Port:            getInt("DB_PORT", 5432),
             User:            get("DB_USER", "postgres"),
-            Password:        get("DB_PASSWORD", "postgres"),
+            Password:        get("DB_PASSWORD", "Hh@12345"),
             Name:            get("DB_NAME", "otp_auth"),
             SSLMode:         get("DB_SSL_MODE", "disable"),
             MaxOpenConns:    getInt("DB_MAX_OPEN_CONNS", 20),

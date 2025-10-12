@@ -7,12 +7,12 @@ import (
 )
 
 type RequestOTPRequest struct {
-    Phone string `json:"phone" binding:"required"`
+    Phone string `json:"phone" binding:"required" example:"+989121234567"`
 }
 
 type VerifyOTPRequest struct {
-    Phone string `json:"phone" binding:"required"`
-    OTP   string `json:"otp" binding:"required,len=6"`
+    Phone string `json:"phone" binding:"required" example:"+989121234567"`
+    OTP   string `json:"otp" binding:"required,len=6" example:"123456"`
 }
 
 type MessageResponse struct {
@@ -43,5 +43,28 @@ func UserFromDomain(u *domUser.User) *UserResponse {
         Phone:     u.Phone,
         CreatedAt: u.CreatedAt,
         UpdatedAt: u.UpdatedAt,
+    }
+}
+
+
+type PaginatedUsersResponse struct {
+    Users      []*UserResponse `json:"users"`
+    Total      int             `json:"total"`
+    Page       int             `json:"page"`
+    PerPage    int             `json:"per_page"`
+    TotalPages int             `json:"total_pages"`
+}
+
+func PaginatedUsersFromDomain(res *domUser.ListResult) *PaginatedUsersResponse {
+    out := make([]*UserResponse, 0, len(res.Users))
+    for _, u := range res.Users {
+        out = append(out, UserFromDomain(u))
+    }
+    return &PaginatedUsersResponse{
+        Users:      out,
+        Total:      res.Total,
+        Page:       res.Page,
+        PerPage:    res.PerPage,
+        TotalPages: res.TotalPages,
     }
 }
